@@ -1,0 +1,379 @@
+import { useState } from "react";
+
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+const T = {
+  bg: "#0A0A0B",
+  surface: "#131314",
+  surfaceLow: "#1c1b1c",
+  surfaceMid: "#201f20",
+  surfaceHigh: "#2a2a2b",
+  surfaceTop: "#353436",
+  gold: "#f2ca50",
+  goldDark: "#d4af37",
+  goldGlow: "rgba(242,202,80,0.10)",
+  goldBorder: "rgba(242,202,80,0.25)",
+  text: "#e5e2e3",
+  textMid: "#d0c5af",
+  textDim: "#99907c",
+  border: "rgba(255,255,255,0.09)",
+  borderLight: "rgba(255,255,255,0.05)",
+  glass: "rgba(255,255,255,0.035)",
+  green: "#4ade80",
+  red: "#f87171",
+};
+
+const MONO = "'JetBrains Mono', 'Courier New', monospace";
+const BODY = "'Inter', system-ui, sans-serif";
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const INQUIRIES = [
+  { id: "portal", label: "Portal Lead", sub: "Came in at 11pm from Zillow or Realtor.com", badge: "IMMEDIATE" },
+  { id: "open-house", label: "Open House Visitor", sub: "Said nice house and left their number", badge: "WARM" },
+  { id: "fsbo", label: "FSBO Owner", sub: "Selling themselves and found you online", badge: "MOTIVATED" },
+  { id: "expired", label: "Expired Listing", sub: "Listing just expired, still needs to sell", badge: "URGENT" },
+  { id: "relocation", label: "Relocation Buyer", sub: "Moving from another state to your market", badge: "SERIOUS" },
+  { id: "investor", label: "Investor Inquiry", sub: "Looking for investment property or fix and flip", badge: "HIGH VALUE" },
+  { id: "cold-seller", label: "Cold Seller Inquiry", sub: "Wants to know what their home is worth", badge: "CURIOUS" },
+  { id: "first-buyer", label: "First Time Buyer", sub: "Never bought before, overwhelmed by the process", badge: "NURTURE" },
+  { id: "referral", label: "Warm Referral", sub: "Someone they trust sent them specifically to you", badge: "PRIORITY" },
+  { id: "social-dm", label: "Social Media DM", sub: "Found you on Instagram or Facebook and messaged", badge: "FRESH" },
+  { id: "past-client", label: "Past Client Return", sub: "Previous buyer or seller coming back to you", badge: "VIP" },
+  { id: "browsing", label: "Just Browsing", sub: "Not serious yet, still gathering information", badge: "PATIENCE" },
+];
+
+const SCENARIOS = [
+  { id: "week1", label: "Week 1. Zero Showings", level: "HIGH" },
+  { id: "week3", label: "Week 3. Showings But No Offers", level: "HIGH" },
+  { id: "price-cut", label: "The Price Reduction Conversation", level: "CRITICAL" },
+  { id: "panic", label: "The Seller Panic Call", level: "CRITICAL" },
+  { id: "leaving", label: "Thinking of Going Elsewhere", level: "CRITICAL" },
+  { id: "pull-off", label: "Should We Pull It Off Market", level: "HIGH" },
+  { id: "confidence", label: "Seller Losing Confidence in You", level: "CRITICAL" },
+];
+
+const CONTENT_IDEAS = [
+  "The one invisible reason your listing is getting ignored",
+  "What buyers actually decide in the first 8 seconds of reading",
+  "Why following up 3 times and stopping is the most expensive habit in real estate",
+  "The seller question that reveals everything about your market position",
+  "What a $10 million listing caption and a $200k listing caption have in common",
+  "The follow-up message your competition is too afraid to send",
+];
+
+// ─── API ──────────────────────────────────────────────────────────────────────
+async function callClaude(system, user) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system,
+      messages: [{ role: "user", content: user }],
+    }),
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || "";
+}
+
+// ─── Copy Hook ────────────────────────────────────────────────────────────────
+function useCopy() {
+  const [copied, setCopied] = useState(false);
+  const copy = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2200);
+  };
+  return [copied, copy];
+}
+
+// ─── Sub Components ───────────────────────────────────────────────────────────
+function MonoTag({ children, color = T.gold, bg, border }) {
+  return (
+    <span style={{
+      fontFamily: MONO, fontSize: "9px", letterSpacing: "0.18em",
+      color: color || T.gold,
+      background: bg || "rgba(242,202,80,0.08)",
+      border: `1px solid ${border || "rgba(242,202,80,0.2)"}`,
+      borderRadius: "4px", padding: "3px 9px",
+    }}>{children}</span>
+  );
+}
+
+function Loader() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "16px", padding: "48px" }}>
+      <div style={{ display: "flex", gap: "4px", alignItems: "flex-end", height: "28px" }}>
+        {[0.0, 0.15, 0.3, 0.15, 0.0].map((d, i) => (
+          <div key={i} style={{
+            width: "4px", borderRadius: "2px", background: T.gold,
+            animation: "wave 0.9s ease-in-out infinite alternate",
+            animationDelay: `${d}s`, minHeight: "6px",
+          }} />
+        ))}
+      </div>
+      <span style={{ fontFamily: MONO, fontSize: "10px", color: T.textDim, letterSpacing: "0.12em" }}>GENERATING...</span>
+    </div>
+  );
+}
+
+function CopyBtn({ onCopy, copied, label = "COPY" }) {
+  return (
+    <button
+      onClick={onCopy}
+      style={{
+        background: copied ? "rgba(74,222,128,0.1)" : T.gold,
+        color: copied ? T.green : T.bg,
+        border: `1px solid ${copied ? "rgba(74,222,128,0.3)" : "transparent"}`,
+        borderRadius: "6px", padding: "10px 22px",
+        fontFamily: MONO, fontSize: "10px", fontWeight: "700",
+        letterSpacing: "0.1em", cursor: "pointer", transition: "all 0.2s",
+      }}
+    >{copied ? "✓ COPIED" : label}</button>
+  );
+}
+
+function RegenerateBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      background: "none", border: `1px solid ${T.border}`,
+      borderRadius: "6px", padding: "10px 16px",
+      fontFamily: MONO, fontSize: "10px", color: T.textDim,
+      letterSpacing: "0.08em", cursor: "pointer",
+    }}>REGENERATE</button>
+  );
+}
+
+// ─── INTEL TAB ────────────────────────────────────────────────────────────────
+function Intel({ voiceProfile, onNavigate }) {
+  const steps = [
+    {
+      num: "01", tab: "signals",
+      label: "Extract Your Voice Signal",
+      desc: "Paste your existing content. The system reads how you communicate and builds your profile.",
+      done: !!voiceProfile,
+    },
+    {
+      num: "02", tab: "targets",
+      label: "Generate Your Response Library",
+      desc: "12 first-response messages for 12 inquiry types. All built from your voice.",
+      done: false,
+    },
+    {
+      num: "03", tab: "archive",
+      label: "Build Your Seller Scripts",
+      desc: "7 scripts for the 7 conversations that cost agents their listings.",
+      done: false,
+    },
+    {
+      num: "04", tab: "archive",
+      label: "Deploy Your Content Engine",
+      desc: "Generate social content that sounds like you, not like a Canva template.",
+      done: false,
+    },
+  ];
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: "48px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+          <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.green, boxShadow: `0 0 8px ${T.green}` }} className="pulse" />
+          <span style={{ fontFamily: MONO, fontSize: "9px", color: T.green, letterSpacing: "0.22em" }}>ACTIVE EXTRACTION PROTOCOL</span>
+        </div>
+        <h1 style={{ fontSize: "clamp(30px, 5vw, 54px)", fontWeight: "800", lineHeight: "1.1", letterSpacing: "-0.025em", marginBottom: "20px", color: T.text }}>
+          COMMAND CENTER
+          <br /><span style={{ color: T.gold }}>AGENT VOICE 01</span>
+        </h1>
+        <p style={{ fontSize: "15px", color: T.textMid, maxWidth: "540px", lineHeight: "1.85" }}>
+          Your communication DNA is the foundation of every output this system builds. The responses, the scripts, the content — all of it starts from how you already sound at your best.
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px", marginBottom: "44px" }}>
+        {[
+          { label: "INQUIRY TYPES", value: "12" },
+          { label: "SELLER SCRIPTS", value: "7" },
+          { label: "CONTENT ENGINE", value: "30 DAYS" },
+          { label: "DELIVERY TIME", value: "14 DAYS" },
+        ].map(s => (
+          <div key={s.label} style={{ background: T.glass, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "20px 16px" }}>
+            <div style={{ fontFamily: MONO, fontSize: "8px", color: T.textDim, letterSpacing: "0.14em", marginBottom: "8px" }}>{s.label}</div>
+            <div style={{ fontFamily: MONO, fontSize: "26px", fontWeight: "700", color: T.gold }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginBottom: "40px" }}>
+        <div style={{ fontFamily: MONO, fontSize: "9px", color: T.textDim, letterSpacing: "0.18em", marginBottom: "16px" }}>DEPLOYMENT SEQUENCE</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {steps.map((step) => (
+            <div
+              key={step.num}
+              onClick={() => onNavigate(step.tab)}
+              style={{
+                background: step.done ? "rgba(74,222,128,0.04)" : T.glass,
+                border: `1px solid ${step.done ? "rgba(74,222,128,0.18)" : T.border}`,
+                borderLeft: `3px solid ${step.done ? T.green : T.gold}`,
+                borderRadius: "8px", padding: "18px 22px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                cursor: "pointer", transition: "all 0.15s",
+              }}
+              className="card-hover"
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <div style={{
+                  width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0,
+                  background: step.done ? T.green : T.goldGlow,
+                  border: `1px solid ${step.done ? T.green : T.goldBorder}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: MONO, fontSize: "11px", fontWeight: "700",
+                  color: step.done ? T.bg : T.gold,
+                }}>{step.done ? "✓" : step.num}</div>
+                <div>
+                  <div style={{ fontWeight: "600", fontSize: "14px", color: T.text, marginBottom: "2px" }}>{step.label}</div>
+                  <div style={{ fontFamily: MONO, fontSize: "10px", color: T.textDim }}>{step.desc}</div>
+                </div>
+              </div>
+              <span style={{ color: T.textDim, fontSize: "20px", flexShrink: 0 }}>›</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background: `linear-gradient(135deg, rgba(242,202,80,0.05) 0%, rgba(0,0,0,0) 100%)`, border: `1px solid ${T.goldBorder}`, borderRadius: "8px", padding: "32px" }}>
+        <div style={{ fontFamily: MONO, fontSize: "9px", color: T.gold, letterSpacing: "0.18em", marginBottom: "14px" }}>THE CORE DIAGNOSIS</div>
+        <p style={{ fontSize: "17px", fontStyle: "italic", color: T.text, lineHeight: "1.9", marginBottom: "20px" }}>
+          "Most agents think they have a lead problem. They do not. They have a communication problem. Leads do not disappear randomly. Trust erodes sentence by sentence. And the agent never sees it happen because the lead simply vanishes without a word."
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {[
+            "95% of agents lose deals from not knowing what to say",
+            "46% say AI tools have had zero real impact on their business",
+            "48% never follow up after the first attempt",
+          ].map((stat, i) => (
+            <MonoTag key={i} color={T.textDim} bg={T.surfaceMid} border={T.border}>{stat}</MonoTag>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SIGNALS TAB ──────────────────────────────────────────────────────────────
+function Signals({ content, setContent, voiceProfile, extracting, error, onExtract }) {
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: "36px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+          <div style={{ width: "5px", height: "5px", borderRadius: "50%", background: T.gold }} className="pulse" />
+          <span style={{ fontFamily: MONO, fontSize: "9px", color: T.gold, letterSpacing: "0.22em" }}>LIVE SIGNAL EXTRACTION</span>
+        </div>
+        <h2 style={{ fontSize: "clamp(24px, 4vw, 40px)", fontWeight: "800", letterSpacing: "-0.02em", marginBottom: "10px" }}>Voice Signal Profile</h2>
+        <p style={{ fontSize: "14px", color: T.textMid, maxWidth: "520px", lineHeight: "1.85" }}>
+          Paste any content you have written as an agent. Listings, emails, social captions, texts. The more you give it, the more accurate your profile becomes.
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: voiceProfile ? "1fr 1fr" : "1fr", gap: "20px", marginBottom: "24px" }}>
+        <div style={{ background: T.glass, border: `1px solid ${T.border}`, borderRadius: "8px", overflow: "hidden" }}>
+          <div style={{ padding: "13px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: MONO, fontSize: "9px", color: T.textDim, letterSpacing: "0.14em" }}>INPUT CONTENT</span>
+            <span style={{ fontFamily: MONO, fontSize: "9px", color: T.textDim }}>{content.length} CHARS</span>
+          </div>
+          <textarea
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            placeholder="Paste your listing descriptions, client emails, social captions, or any content you have written as an agent. Mix it up for the best extraction result."
+            style={{
+              width: "100%", minHeight: "280px", background: "transparent", border: "none",
+              color: T.text, fontFamily: BODY, fontSize: "14px", lineHeight: "1.75",
+              padding: "20px", resize: "vertical",
+            }}
+          />
+          {error && (
+            <div style={{ padding: "11px 20px", background: "rgba(248,113,113,0.05)", borderTop: "1px solid rgba(248,113,113,0.15)" }}>
+              <span style={{ fontFamily: MONO, fontSize: "9px", color: T.red }}>{error}</span>
+            </div>
+          )}
+          <div style={{ padding: "16px 20px", borderTop: `1px solid ${T.border}` }}>
+            <button
+              onClick={onExtract}
+              disabled={extracting}
+              className={!extracting ? "btn-primary" : ""}
+              style={{
+                background: extracting ? T.surfaceHigh : T.gold,
+                color: extracting ? T.textDim : T.bg,
+                border: "none", borderRadius: "6px", padding: "12px 24px",
+                fontFamily: MONO, fontSize: "11px", fontWeight: "700",
+                letterSpacing: "0.1em", cursor: extracting ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: "8px",
+                boxShadow: extracting ? "none" : "0 0 24px rgba(242,202,80,0.2)",
+                transition: "all 0.2s",
+              }}
+            >
+              {extracting ? (
+                <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>◈</span> EXTRACTING SIGNAL...</>
+              ) : "EXTRACT VOICE SIGNAL →"}
+            </button>
+          </div>
+        </div>
+
+        {voiceProfile && (
+          <div className="fade-up" style={{ background: T.glass, border: `1px solid ${T.goldBorder}`, borderRadius: "8px", overflow: "hidden" }}>
+            <div style={{ padding: "13px 20px", borderBottom: `1px solid ${T.goldBorder}`, background: T.goldGlow, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: MONO, fontSize: "9px", color: T.gold, letterSpacing: "0.14em" }}>PROFILE ACTIVE</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ width: "5px", height: "5px", borderRadius: "50%", background: T.green }} className="pulse" />
+                <span style={{ fontFamily: MONO, fontSize: "9px", color: T.green }}>SYNC COMPLETE</span>
+              </div>
+            </div>
+            <div style={{ padding: "22px", maxHeight: "420px", overflowY: "auto" }}>
+              {voiceProfile.summary && (
+                <div style={{ marginBottom: "18px", padding: "14px", background: T.surfaceMid, borderRadius: "6px", borderLeft: `3px solid ${T.gold}` }}>
+                  <div style={{ fontFamily: MONO, fontSize: "8px", color: T.textDim, letterSpacing: "0.15em", marginBottom: "6px" }}>PROFILE SUMMARY</div>
+                  <p style={{ fontSize: "13px", color: T.text, lineHeight: "1.7" }}>{voiceProfile.summary}</p>
+                </div>
+              )}
+              {[
+                { key: "tone", label: "TONE" },
+                { key: "authority_style", label: "AUTHORITY STYLE" },
+                { key: "sentence_rhythm", label: "SENTENCE RHYTHM" },
+                { key: "emotional_register", label: "EMOTIONAL REGISTER" },
+                { key: "vocabulary", label: "VOCABULARY LEVEL" },
+                { key: "closing_style", label: "CLOSING STYLE" },
+                { key: "market_expertise", label: "MARKET EXPERTISE" },
+              ].filter(f => voiceProfile[f.key] && typeof voiceProfile[f.key] === "string").map(field => (
+                <div key={field.key} style={{ marginBottom: "13px", paddingBottom: "13px", borderBottom: `1px solid ${T.borderLight}` }}>
+                  <div style={{ fontFamily: MONO, fontSize: "8px", color: T.textDim, letterSpacing: "0.15em", marginBottom: "4px" }}>{field.label}</div>
+                  <div style={{ fontSize: "13px", color: T.text }}>{voiceProfile[field.key]}</div>
+                </div>
+              ))}
+              {Array.isArray(voiceProfile.trust_signals) && voiceProfile.trust_signals.length > 0 && (
+                <div style={{ marginBottom: "13px" }}>
+                  <div style={{ fontFamily: MONO, fontSize: "8px", color: T.textDim, letterSpacing: "0.15em", marginBottom: "8px" }}>TRUST SIGNALS</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                    {voiceProfile.trust_signals.map((s, i) => (
+                      <MonoTag key={i}>{s}</MonoTag>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {Array.isArray(voiceProfile.unique_patterns) && voiceProfile.unique_patterns.length > 0 && (
+                <div>
+                  <div style={{ fontFamily: MONO, fontSize: "8px", color: T.textDim, letterSpacing: "0.15em", marginBottom: "8px" }}>UNIQUE PATTERNS</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                    {voiceProfile.unique_patterns.map((p, i) => (
+                      <MonoTag key={i} color="#b1c5ff" bg="rgba(177,197,255,0.07)" border="rgba(177,197,255,0.2)">{p}</MonoTag>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!voiceProfile && (
+        <div style={{ background: T.glass, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "24px" }}>
+          <div style={{ fontFamily: MONO, fontSize: "9px", color: T.textDim, letterSpacing: "0.15em", marginBottom: "16px" }}>SEMANTIC WAVEFORM ANALYSIS</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "
